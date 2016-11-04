@@ -10,7 +10,9 @@ from string import ascii_letters, ascii_uppercase
 from itertools import cycle, repeat, product
 from unicodedata import normalize
 from collections import defaultdict
+from functools import wraps
 from argparse import ArgumentParser
+from inspect import signature
 
 
 def cipher_normalize(text):
@@ -31,6 +33,31 @@ def cipher_normalize(text):
     return text.upper()
 
 
+def check_ascii_parameters(*parameters):
+    """Décorateur qui permet de vérifier que, pour la fonction décorée, les paramètres qui
+    ont le même nom que des éléments de parameters sont des chaînes ASCII majuscules.
+    """
+    def decorator(func):
+        sig = signature(func)
+
+        @wraps(func)
+        def new_func(*args, **kwargs):
+            arguments = sig.bind(*args, **kwargs)
+
+            for parameter in parameters:
+                # parameter doit être un nom de paramètre valide => pas de try/catch
+                for c in arguments.arguments[parameter]:
+                    if c not in ascii_uppercase:
+                        raise ValueError("{} contient des caractère non lettre ASCII majuscule".format(parameter))
+
+            return func(*args, **kwargs)
+
+        return new_func
+
+    return decorator
+
+
+@check_ascii_parameters("text")
 def caesar_encipher(text, rotation):
     """Chiffre un texte selon le chiffrement de César.
 
@@ -38,16 +65,13 @@ def caesar_encipher(text, rotation):
     rotation est un entier. cipher_normalize peut être utilisée pour convertir text dans un
     format valide. Renvoie la version chiffrée de text.
     """
-    for c in text:
-        if c not in ascii_uppercase:
-            raise ValueError("Caractère non lettre ASCII majuscule")
-
     rotation = rotation % 26
     caesar_letters = ascii_uppercase[rotation:] + ascii_uppercase[:rotation]
 
     return text.translate(str.maketrans(ascii_uppercase, caesar_letters))
 
 
+@check_ascii_parameters("text")
 def caesar_decipher(text):
     """Déchiffre un texte chiffré à l'aide du chiffrement de César.
 
@@ -56,10 +80,6 @@ def caesar_decipher(text):
     lettre la plus présente dans text correspond à un "E". S'il y a plusieurs lettres les
     plus présentes, les différentes solutions possibles sont renvoyées.
     """
-    for c in text:
-        if c not in ascii_uppercase:
-            raise ValueError("Caractère non lettre ASCII majuscule")
-
     letter_count = defaultdict(int)    # int() renvoie 0
     for c in text:
         letter_count[c] += 1
@@ -81,37 +101,27 @@ def caesar_decipher(text):
     return results
 
 
+@check_ascii_parameters("text", "key")
 def vigenere_encipher(text, key):
     """Chiffre un texte selon le chiffrement de Vigenère.
 
     text et key sont supposés être des strings composées uniquement de lettres ASCII majuscules.
     """
-    for c in text:
-        if c not in ascii_uppercase:
-            raise ValueError("Caractère non lettre ASCII majuscule")
-
-    for c in key:
-        if c not in ascii_uppercase:
-            raise ValueError("Caractère non lettre ASCII majuscule")
-
     return "".join(
         caesar_encipher(c, ord(k) - ord("A"))
         for c, k in zip(text, cycle(key))
     )
 
 
+@check_ascii_parameters("text")
 def vigenere_decipher(text):
     """Déchiffre un texte chiffré à l'aide du chiffrement de Vigenère.
 
     text est supposé être une string composée uniquement de lettres ASCII majuscules.
     """
-    for c in text:
-        if c not in ascii_uppercase:
-            raise ValueError("Caractère non lettre ASCII majuscule")
-
     # Séparation en sous textes pour trouver la bonne taille de clé via
     # l'indice de coïncidence
-    for step in range(1, len(text)+1):
+    for step in range(1, len(text) + 1):
         subtexts = [text[start::step] for start in range(step)]
 
         # Indice de coïncidence
@@ -123,7 +133,9 @@ def vigenere_decipher(text):
             for c in subtext:
                 letter_count[c] += 1
 
-            Ic_sub.append(sum(count*(count-1) for count in letter_count.values()) / (len(subtext)*(len(subtext)-1)))
+            Ic_sub.append(
+                sum(count * (count - 1) for count in letter_count.values()) / (len(subtext) * (len(subtext) - 1))
+            )
         Ic_mean = sum(Ic_sub) / len(Ic_sub)
 
         if Ic_mean > 0.074:
